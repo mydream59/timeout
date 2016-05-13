@@ -204,9 +204,10 @@ static inline wheel_t rotr(const wheel_t v, int c) {
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 TAILQ_HEAD(timeout_list, timeout);
-
+//timeout集合结构
 struct timeouts {
-	struct timeout_list wheel[WHEEL_NUM][WHEEL_LEN], expired;
+	struct timeout_list wheel[WHEEL_NUM][WHEEL_LEN];//TAILQ链表结构
+	struct timeout_list expired;//已超时timeout队列
 
 	wheel_t pending[WHEEL_NUM];
 
@@ -214,7 +215,7 @@ struct timeouts {
 	timeout_t hertz;
 }; /* struct timeouts */
 
-
+//初始化timeouts结构
 static struct timeouts *timeouts_init(struct timeouts *T, timeout_t hz) {
 	unsigned i, j;
 
@@ -236,7 +237,7 @@ static struct timeouts *timeouts_init(struct timeouts *T, timeout_t hz) {
 	return T;
 } /* timeouts_init() */
 
-
+//创建time wheel结构
 TIMEOUT_PUBLIC struct timeouts *timeouts_open(timeout_t hz, int *error) {
 	struct timeouts *T;
 
@@ -270,7 +271,7 @@ static void timeouts_reset(struct timeouts *T) {
 	}
 } /* timeouts_reset() */
 
-
+//关闭并释放timeouts集合
 TIMEOUT_PUBLIC void timeouts_close(struct timeouts *T) {
 	/*
 	 * NOTE: Delete installed timeouts so timeout_pending() and
@@ -386,7 +387,7 @@ TIMEOUT_PUBLIC void timeouts_add(struct timeouts *T, struct timeout *to, timeout
 
 
 TIMEOUT_PUBLIC void timeouts_update(struct timeouts *T, abstime_t curtime) {
-	timeout_t elapsed = curtime - T->curtime;
+	timeout_t elapsed = curtime - T->curtime;//上次超时后过去的时间
 	struct timeout_list todo;
 	int wheel;
 
@@ -414,9 +415,11 @@ TIMEOUT_PUBLIC void timeouts_update(struct timeouts *T, abstime_t curtime) {
 		 * wheel.
 		 */
 		if ((elapsed >> (wheel * WHEEL_BIT)) > WHEEL_MAX) {
-			pending = (wheel_t)~WHEEL_C(0);
+			//过去时间超过最大轮数，表示所有的timeout都超时了
+			//设置pending为0xffffffff
+			pending = (wheel_t)~ WHEEL_C(0);
 		} else {
-			wheel_t _elapsed = WHEEL_MASK & (elapsed >> (wheel * WHEEL_BIT));
+			wheel_t _elapsed = WHEEL_MASK & (elapsed >> (wheel * WHEEL_BIT));//恰好超时的slot位
 			int oslot, nslot;
 
 			/*
@@ -424,10 +427,10 @@ TIMEOUT_PUBLIC void timeouts_update(struct timeouts *T, abstime_t curtime) {
 			 * following three bit fill operations is redundant
 			 * or can be replaced with a simpler operation.
 			 */
-			oslot = WHEEL_MASK & (T->curtime >> (wheel * WHEEL_BIT));
+			oslot = WHEEL_MASK & (T->curtime >> (wheel * WHEEL_BIT));//上次超时的slot位
 			pending = rotl(((UINT64_C(1) << _elapsed) - 1), oslot);
 
-			nslot = WHEEL_MASK & (curtime >> (wheel * WHEEL_BIT));
+			nslot = WHEEL_MASK & (curtime >> (wheel * WHEEL_BIT));//当前时间对应的slot位
 			pending |= rotr(rotl(((WHEEL_C(1) << _elapsed) - 1), nslot), _elapsed);
 			pending |= WHEEL_C(1) << nslot;
 		}
@@ -697,16 +700,17 @@ TIMEOUT_PUBLIC struct timeout *timeout_init(struct timeout *to, int flags) {
 
 
 #ifndef TIMEOUT_DISABLE_RELATIVE_ACCESS
+//正在等待超时
 TIMEOUT_PUBLIC bool timeout_pending(struct timeout *to) {
 	return to->pending && to->pending != &to->timeouts->expired;
 } /* timeout_pending() */
 
-
+//已超时
 TIMEOUT_PUBLIC bool timeout_expired(struct timeout *to) {
 	return to->pending && to->pending == &to->timeouts->expired;
 } /* timeout_expired() */
 
-
+//从timeouts集合删除timeout
 TIMEOUT_PUBLIC void timeout_del(struct timeout *to) {
 	timeouts_del(to->timeouts, to);
 } /* timeout_del() */

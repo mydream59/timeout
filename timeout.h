@@ -112,30 +112,31 @@ struct timeout_cb {
 	(to)->callback.arg = (arg);     \
 } while (0)
 
+//每个定时器节点结构
 struct timeout {
 	int flags;
 
-	timeout_t expires;
+	timeout_t expires;//绝对 超时时间
 	/* absolute expiration time */
 
-	struct timeout_list *pending;
+	struct timeout_list *pending;//所在的等待超时队列
 	/* timeout list if pending on wheel or expiry queue */
 
-	TAILQ_ENTRY(timeout) tqe;
+	TAILQ_ENTRY(timeout) tqe;//往timeout_list链表中挂的节点
 	/* entry member for struct timeout_list lists */
 
 #ifndef TIMEOUT_DISABLE_CALLBACKS
-	struct timeout_cb callback;
+	struct timeout_cb callback;//回调函数
 	/* optional callback information */
 #endif
 
 #ifndef TIMEOUT_DISABLE_INTERVALS
-	timeout_t interval;
+	timeout_t interval;//周期超时间隔
 	/* timeout interval if periodic */
 #endif
 
 #ifndef TIMEOUT_DISABLE_RELATIVE_ACCESS
-	struct timeouts *timeouts;
+	struct timeouts *timeouts;//回指向timeouts集合
 	/* timeouts collection if member of */
 #endif
 }; /* struct timeout */

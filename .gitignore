@@ -1,3 +1,4 @@
+test-timeout
 *.o
 *.gcda
 *.gcov
