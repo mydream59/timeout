@@ -46,6 +46,7 @@
 #ifdef TIMEOUT_DISABLE_RELATIVE_ACCESS
 #define TO_SET_TIMEOUTS(to, T) ((void)0)
 #else
+//设置当前定时器指向的定时器数组
 #define TO_SET_TIMEOUTS(to, T) ((to)->timeouts = (T))
 #endif
 
@@ -209,10 +210,10 @@ struct timeouts {
 	struct timeout_list wheel[WHEEL_NUM][WHEEL_LEN];//TAILQ链表结构
 	struct timeout_list expired;//已超时timeout队列
 
-	wheel_t pending[WHEEL_NUM];
+	wheel_t pending[WHEEL_NUM];//记录每个wheel[slot]中存有哪些wheel[][]的掩码
 
-	timeout_t curtime;
-	timeout_t hertz;
+	timeout_t curtime;//当前时间
+	timeout_t hertz;//
 }; /* struct timeouts */
 
 //初始化timeouts结构
@@ -311,6 +312,8 @@ static inline reltime_t timeout_rem(struct timeouts *T, struct timeout *to) {
 } /* timeout_rem() */
 
 
+//最高有值bit位低，代表超时时间小，这种对应的slot小，放在低slot位
+//由于该函数可看出WHEEL_NUM应该比(32/64) / WHEEL_BIT小
 static inline int timeout_wheel(timeout_t timeout) {
 	/* must be called with timeout != 0, so fls input is nonzero */
 	return (fls(MIN(timeout, TIMEOUT_MAX)) - 1) / WHEEL_BIT;
@@ -321,7 +324,7 @@ static inline int timeout_slot(int wheel, timeout_t expires) {
 	return WHEEL_MASK & ((expires >> (wheel * WHEEL_BIT)) - !!wheel);
 } /* timeout_slot() */
 
-
+//调整to定时器在定时器数组中的位置
 static void timeouts_sched(struct timeouts *T, struct timeout *to, timeout_t expires) {
 	timeout_t rem;
 	int wheel, slot;
@@ -333,21 +336,22 @@ static void timeouts_sched(struct timeouts *T, struct timeout *to, timeout_t exp
 	TO_SET_TIMEOUTS(to, T);
 
 	if (expires > T->curtime) {
-		rem = timeout_rem(T, to);
+		rem = timeout_rem(T, to);//剩余超时时间
 
 		/* rem is nonzero since:
 		 *   rem == timeout_rem(T,to),
 		 *       == to->expires - T->curtime
 		 *   and above we have expires > T->curtime.
 		 */
-		wheel = timeout_wheel(rem);
-		slot = timeout_slot(wheel, to->expires);
+		wheel = timeout_wheel(rem);//算出对应的slot
+		slot = timeout_slot(wheel, to->expires);//计算绝对时间高位部分对应的wheel
 
 		to->pending = &T->wheel[wheel][slot];
 		TAILQ_INSERT_TAIL(to->pending, to, tqe);
 
-		T->pending[wheel] |= WHEEL_C(1) << slot;
+		T->pending[wheel] |= WHEEL_C(1) << slot;//将所属wheel记录在pending掩码数组中
 	} else {
+		//已超时定时器加入 超时队列
 		to->pending = &T->expired;
 		TAILQ_INSERT_TAIL(to->pending, to, tqe);
 	}
@@ -355,6 +359,8 @@ static void timeouts_sched(struct timeouts *T, struct timeout *to, timeout_t exp
 
 
 #ifndef TIMEOUT_DISABLE_INTERVALS
+//定时超时时，重新调整定时器位置
+//如果定时超时已超时，那么将超时时间设置为当前时间的下次定时超时的时间
 static void timeouts_readd(struct timeouts *T, struct timeout *to) {
 	to->expires += to->interval;
 
@@ -372,7 +378,7 @@ static void timeouts_readd(struct timeouts *T, struct timeout *to) {
 } /* timeouts_readd() */
 #endif
 
-
+//增加定时器
 TIMEOUT_PUBLIC void timeouts_add(struct timeouts *T, struct timeout *to, timeout_t timeout) {
 #ifndef TIMEOUT_DISABLE_INTERVALS
 	if (to->flags & TIMEOUT_INT)
@@ -385,7 +391,7 @@ TIMEOUT_PUBLIC void timeouts_add(struct timeouts *T, struct timeout *to, timeout
 		timeouts_sched(T, to, T->curtime + timeout);
 } /* timeouts_add() */
 
-
+//更新定时器数组
 TIMEOUT_PUBLIC void timeouts_update(struct timeouts *T, abstime_t curtime) {
 	timeout_t elapsed = curtime - T->curtime;//上次超时后过去的时间
 	struct timeout_list todo;
@@ -463,12 +469,13 @@ TIMEOUT_PUBLIC void timeouts_update(struct timeouts *T, abstime_t curtime) {
 	return;
 } /* timeouts_update() */
 
-
+//current time过去elapsed时间
 TIMEOUT_PUBLIC void timeouts_step(struct timeouts *T, reltime_t elapsed) {
 	timeouts_update(T, T->curtime + elapsed);
 } /* timeouts_step() */
 
 
+//是否有定时器在等待超时
 TIMEOUT_PUBLIC bool timeouts_pending(struct timeouts *T) {
 	wheel_t pending = 0;
 	int wheel;
@@ -480,7 +487,7 @@ TIMEOUT_PUBLIC bool timeouts_pending(struct timeouts *T) {
 	return !!pending;
 } /* timeouts_pending() */
 
-
+//是否有定时器已超时等待处理
 TIMEOUT_PUBLIC bool timeouts_expired(struct timeouts *T) {
 	return !TAILQ_EMPTY(&T->expired);
 } /* timeouts_expired() */
@@ -502,6 +509,7 @@ TIMEOUT_PUBLIC bool timeouts_expired(struct timeouts *T) {
  *
  * We should never return a timeout larger than the lowest actual timeout.
  */
+//计算最早的定时器超时之前的时间
 static timeout_t timeouts_int(struct timeouts *T) {
 	timeout_t timeout = ~TIMEOUT_C(0), _timeout;
 	timeout_t relmask;
@@ -536,6 +544,7 @@ static timeout_t timeouts_int(struct timeouts *T) {
  * Calculate the interval our caller can wait before needing to process
  * events.
  */
+//计算最早的定时器超时之前的时间
 TIMEOUT_PUBLIC timeout_t timeouts_timeout(struct timeouts *T) {
 	if (!TAILQ_EMPTY(&T->expired))
 		return 0;
@@ -553,6 +562,7 @@ TIMEOUT_PUBLIC struct timeout *timeouts_get(struct timeouts *T) {
 		TO_SET_TIMEOUTS(to, NULL);
 
 #ifndef TIMEOUT_DISABLE_INTERVALS
+		//当前定时器超时后，如果是定时超时，则重新加入队列
 		if ((to->flags & TIMEOUT_INT) && to->interval > 0)
 			timeouts_readd(T, to);
 #endif
@@ -568,6 +578,7 @@ TIMEOUT_PUBLIC struct timeout *timeouts_get(struct timeouts *T) {
  * Use dumb looping to locate the earliest timeout pending on the wheel so
  * our invariant assertions can check the result of our optimized code.
  */
+//返回最早要超时的timeout
 static struct timeout *timeouts_min(struct timeouts *T) {
 	struct timeout *to, *min = NULL;
 	unsigned i, j;
@@ -601,6 +612,7 @@ static struct timeout *timeouts_min(struct timeouts *T) {
 	} \
 } while (0)
 
+//遍历定时器链表检查是否存在错误现象
 TIMEOUT_PUBLIC bool timeouts_check(struct timeouts *T, FILE *fp) {
 	timeout_t timeout;
 	struct timeout *to;
