@@ -114,7 +114,7 @@ struct timeout_cb {
 
 //每个定时器节点结构
 struct timeout {
-	int flags;
+	int flags;//TIMEOUT_ABS传入超时时间使用绝对时间，0 传入超时时间为相对now的相对时间
 
 	timeout_t expires;//绝对 超时时间
 	/* absolute expiration time */
@@ -212,7 +212,7 @@ TIMEOUT_PUBLIC bool timeouts_check(struct timeouts *, FILE *);
 } while (0)
 
 struct timeouts_it {
-	int flags;
+	int flags;//获取timeouts_next时，指定获取的链表:TIMEOUTS_EXPIRED、TIMEOUTS_PENDING、TIMEOUTS_ALL
 	unsigned pc, i, j;
 	struct timeout *to;
 }; /* struct timeouts_it */

@@ -392,6 +392,7 @@ TIMEOUT_PUBLIC void timeouts_add(struct timeouts *T, struct timeout *to, timeout
 } /* timeouts_add() */
 
 //更新定时器数组
+//传入当前时间，更新时间轮
 TIMEOUT_PUBLIC void timeouts_update(struct timeouts *T, abstime_t curtime) {
 	timeout_t elapsed = curtime - T->curtime;//上次超时后过去的时间
 	struct timeout_list todo;
@@ -676,6 +677,7 @@ TIMEOUT_PUBLIC struct timeout *timeouts_next(struct timeouts *T, struct timeouts
 		}
 	}
 
+	//从待超时链表中取第一个节点
 	if (it->flags & TIMEOUTS_PENDING) {
 		for (it->i = 0; it->i < countof(T->wheel); it->i++) {
 			for (it->j = 0; it->j < countof(T->wheel[it->i]); it->j++) {
@@ -701,7 +703,8 @@ TIMEOUT_PUBLIC struct timeout *timeouts_next(struct timeouts *T, struct timeouts
  * T I M E O U T  R O U T I N E S
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-
+//flags:0 使用相对时间，0x02 使用绝对时间
+//初始化一个新的定时器
 TIMEOUT_PUBLIC struct timeout *timeout_init(struct timeout *to, int flags) {
 	memset(to, 0, sizeof *to);
 

@@ -82,7 +82,7 @@ static int check_randomized(const struct rand_cfg *cfg)
 	uint8_t *fired = calloc(cfg->n_timeouts, sizeof(uint8_t));
         uint8_t *found = calloc(cfg->n_timeouts, sizeof(uint8_t));
 	uint8_t *deleted = calloc(cfg->n_timeouts, sizeof(uint8_t));
-	struct timeouts *tos = timeouts_open(0, &err);
+	struct timeouts *tos = timeouts_open(0, &err);//创建定时器操作句柄
 	timeout_t now = cfg->start_at;
 	int n_added_pending = 0, cnt_added_pending = 0;
 	int n_added_expired = 0, cnt_added_expired = 0;
@@ -93,19 +93,19 @@ static int check_randomized(const struct rand_cfg *cfg)
 
 	if (!t || !timeouts || !tos || !fired || !found || !deleted)
 		FAIL();
-	timeouts_update(tos, cfg->start_at);
+	timeouts_update(tos, cfg->start_at);//第一次调用传入开始时间
 
 	for (i = 0; i < cfg->n_timeouts; ++i) {
-		if (&t[i] != timeout_init(&t[i], rel ? 0 : TIMEOUT_ABS))
+		if (&t[i] != timeout_init(&t[i], rel ? 0 : TIMEOUT_ABS))//初始化一个新的定时器
 			FAIL();
 		if (timeout_pending(&t[i]))
 			FAIL();
 		if (timeout_expired(&t[i]))
 			FAIL();
 
-		timeouts[i] = random_to(cfg->min_timeout, cfg->max_timeout);
+		timeouts[i] = random_to(cfg->min_timeout, cfg->max_timeout);//随机产生一个绝对超时时间
 
-		timeouts_add(tos, &t[i], timeouts[i] - (rel ? now : 0));
+		timeouts_add(tos, &t[i], timeouts[i] - (rel ? now : 0));//将定时器加入时间轮
 		if (timeouts[i] <= cfg->start_at) {
 			if (timeout_pending(&t[i]))
 				FAIL();
