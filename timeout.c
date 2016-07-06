@@ -130,16 +130,21 @@
 #define WHEEL_NUM 4
 #endif
 
+//每个wheel位下边的timeout链表数目
 #define WHEEL_LEN (1U << WHEEL_BIT)
 #define WHEEL_MAX (WHEEL_LEN - 1)
 #define WHEEL_MASK (WHEEL_LEN - 1)
+//可放入固定solt位的最大超时时间
 #define TIMEOUT_MAX ((TIMEOUT_C(1) << (WHEEL_BIT * WHEEL_NUM)) - 1)
 
 #include "timeout-bitops.c"
 
 #if WHEEL_BIT == 6
+//返回右起第一个‘1’之后的0的个数
 #define ctz(n) ctz64(n)
+//返回左起第一个‘1’之前0的个数
 #define clz(n) clz64(n)
+//返回左起第一个1，及其之后位的个数
 #define fls(n) ((int)(64 - clz64(n)))
 #else
 #define ctz(n) ctz32(n)
@@ -250,7 +255,7 @@ TIMEOUT_PUBLIC struct timeouts *timeouts_open(timeout_t hz, int *error) {
 	return NULL;
 } /* timeouts_open() */
 
-
+//bug:是否有内存泄露
 static void timeouts_reset(struct timeouts *T) {
 	struct timeout_list reset;
 	struct timeout *to;
@@ -272,7 +277,7 @@ static void timeouts_reset(struct timeouts *T) {
 	}
 } /* timeouts_reset() */
 
-//关闭并释放timeouts集合
+//关闭并释放timeouts集合，但是里边挂的定时器没有释放
 TIMEOUT_PUBLIC void timeouts_close(struct timeouts *T) {
 	/*
 	 * NOTE: Delete installed timeouts so timeout_pending() and
@@ -288,7 +293,7 @@ TIMEOUT_PUBLIC timeout_t timeouts_hz(struct timeouts *T) {
 	return T->hertz;
 } /* timeouts_hz() */
 
-
+//删除一个定时器
 TIMEOUT_PUBLIC void timeouts_del(struct timeouts *T, struct timeout *to) {
 	if (to->pending) {
 		TAILQ_REMOVE(to->pending, to, tqe);
@@ -298,6 +303,7 @@ TIMEOUT_PUBLIC void timeouts_del(struct timeouts *T, struct timeout *to) {
 			int wheel = index / WHEEL_LEN;
 			int slot = index % WHEEL_LEN;
 
+			//当前位置链表已经没有定时器了，将其从掩码记录中移除
 			T->pending[wheel] &= ~(WHEEL_C(1) << slot);
 		}
 
@@ -306,20 +312,20 @@ TIMEOUT_PUBLIC void timeouts_del(struct timeouts *T, struct timeout *to) {
 	}
 } /* timeouts_del() */
 
-
+//剩余多长时间超时
 static inline reltime_t timeout_rem(struct timeouts *T, struct timeout *to) {
 	return to->expires - T->curtime;
 } /* timeout_rem() */
 
 
-//最高有值bit位低，代表超时时间小，这种对应的slot小，放在低slot位
-//由于该函数可看出WHEEL_NUM应该比(32/64) / WHEEL_BIT小
+//计算超时时间间隔的最大bit数，确定wheel位置
+//传入timeout不能为0
 static inline int timeout_wheel(timeout_t timeout) {
 	/* must be called with timeout != 0, so fls input is nonzero */
 	return (fls(MIN(timeout, TIMEOUT_MAX)) - 1) / WHEEL_BIT;
 } /* timeout_wheel() */
 
-
+//除了times[0]外，后边的times[wheel]最大的times[wheel][max]实际没有用到
 static inline int timeout_slot(int wheel, timeout_t expires) {
 	return WHEEL_MASK & ((expires >> (wheel * WHEEL_BIT)) - !!wheel);
 } /* timeout_slot() */
@@ -343,7 +349,7 @@ static void timeouts_sched(struct timeouts *T, struct timeout *to, timeout_t exp
 		 *       == to->expires - T->curtime
 		 *   and above we have expires > T->curtime.
 		 */
-		wheel = timeout_wheel(rem);//算出对应的slot
+		wheel = timeout_wheel(rem);//算出对应的wheel
 		slot = timeout_slot(wheel, to->expires);//计算绝对时间高位部分对应的wheel
 
 		to->pending = &T->wheel[wheel][slot];
@@ -442,6 +448,7 @@ TIMEOUT_PUBLIC void timeouts_update(struct timeouts *T, abstime_t curtime) {
 			pending |= WHEEL_C(1) << nslot;
 		}
 
+		//将需要调整位置的链表挂到todo list，稍后处理，原链表头初始化为NULL
 		while (pending & T->pending[wheel]) {
 			/* ctz input cannot be zero: loop condition. */
 			int slot = ctz(pending & T->pending[wheel]);
@@ -449,6 +456,8 @@ TIMEOUT_PUBLIC void timeouts_update(struct timeouts *T, abstime_t curtime) {
 			T->pending[wheel] &= ~(UINT64_C(1) << slot);
 		}
 
+		//如果为0说明本wheel最小的时间链表也没有超时，
+		//这样就没必要再遍历更大的wheel了
 		if (!(0x1 & pending))
 			break; /* break if we didn't wrap around end of wheel */
 
@@ -458,6 +467,7 @@ TIMEOUT_PUBLIC void timeouts_update(struct timeouts *T, abstime_t curtime) {
 
 	T->curtime = curtime;
 
+	//遍历所有要调整位置的定时器，调整其位置
 	while (!TAILQ_EMPTY(&todo)) {
 		struct timeout *to = TAILQ_FIRST(&todo);
 
@@ -553,14 +563,15 @@ TIMEOUT_PUBLIC timeout_t timeouts_timeout(struct timeouts *T) {
 	return timeouts_int(T);
 } /* timeouts_timeout() */
 
-
+//从已超时定时器队列中取出一个定时器移出已超时队列
+//如果定时器设置了定时超时，将定时器重新加入定时器数组
 TIMEOUT_PUBLIC struct timeout *timeouts_get(struct timeouts *T) {
 	if (!TAILQ_EMPTY(&T->expired)) {
 		struct timeout *to = TAILQ_FIRST(&T->expired);
 
 		TAILQ_REMOVE(&T->expired, to, tqe);
 		to->pending = NULL;
-		TO_SET_TIMEOUTS(to, NULL);
+		TO_SET_TIMEOUTS(to, NULL);//设置当前定时器指向的定时器数组为NULL
 
 #ifndef TIMEOUT_DISABLE_INTERVALS
 		//当前定时器超时后，如果是定时超时，则重新加入队列
@@ -660,6 +671,8 @@ TIMEOUT_PUBLIC bool timeouts_check(struct timeouts *T, FILE *fp) {
 	}                                                               \
 	} while (0)
 
+//从TIMEOUTS_EXPIRED或TIMEOUTS_PENDING链表中返回第一个节点
+//如果是TIMEOUTS_EXPIRED链表，且设置了TIMEOUTS_CLEAR，则直接从链表中移除
 TIMEOUT_PUBLIC struct timeout *timeouts_next(struct timeouts *T, struct timeouts_it *it) {
 	struct timeout *to;
 

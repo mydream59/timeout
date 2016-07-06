@@ -213,8 +213,8 @@ TIMEOUT_PUBLIC bool timeouts_check(struct timeouts *, FILE *);
 
 struct timeouts_it {
 	int flags;//获取timeouts_next时，指定获取的链表:TIMEOUTS_EXPIRED、TIMEOUTS_PENDING、TIMEOUTS_ALL
-	unsigned pc, i, j;
-	struct timeout *to;
+	unsigned pc, i, j;//i，j获取到节点对应的wheel[i][j]
+	struct timeout *to;//返回节点的next节点,在safe遍历中作为临时变量
 }; /* struct timeouts_it */
 
 TIMEOUT_PUBLIC struct timeout *timeouts_next(struct timeouts *, struct timeouts_it *);

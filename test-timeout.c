@@ -52,11 +52,11 @@ struct rand_cfg {
 	/* When creating timeouts, largest possible delay */
 	timeout_t max_timeout;
 	/* First time to start the clock at. */
-	timeout_t start_at;
+	timeout_t start_at;//时钟起始时间
 	/* Do not advance the clock past this time. */
 	timeout_t end_at;
 	/* Number of timeouts to create and monitor. */
-	int n_timeouts;
+	int n_timeouts;//创建定时器数目
 	/* Advance the clock by no more than this each step. */
 	timeout_t max_step;
 	/* Use relative timers and stepping */
@@ -106,7 +106,7 @@ static int check_randomized(const struct rand_cfg *cfg)
 		timeouts[i] = random_to(cfg->min_timeout, cfg->max_timeout);//随机产生一个绝对超时时间
 
 		timeouts_add(tos, &t[i], timeouts[i] - (rel ? now : 0));//将定时器加入时间轮
-		if (timeouts[i] <= cfg->start_at) {
+		if (timeouts[i] <= cfg->start_at) {//超时时间小于开始时间，加入定时器时直接超时
 			if (timeout_pending(&t[i]))
 				FAIL();
 			if (! timeout_expired(&t[i]))
@@ -138,7 +138,7 @@ static int check_randomized(const struct rand_cfg *cfg)
 				++found[i];
 				++cnt_added_pending;
 			} else {
-				p_done = 1;
+				p_done = 1;//没有pending的了，则设置为1
 			}
 		}
 		if (!e_done) {
@@ -163,15 +163,15 @@ static int check_randomized(const struct rand_cfg *cfg)
         }
 
 	for (i = 0; i < cfg->n_timeouts; ++i) {
-		if (found[i] != 2)
+		if (found[i] != 2)//刚加入定时器，所以不会有clear的内容
 			FAIL();
 	}
 	if (cnt_added_expired != n_added_expired)
-		FAIL();
+		FAIL();	
 	if (cnt_added_pending != n_added_pending)
 		FAIL();
 
-	while (NULL != (to = timeouts_get(tos))) {
+	while (NULL != (to = timeouts_get(tos))) {//将超时定时器全部取出
 		i = to - &t[0];
 		assert(&t[i] == to);
 		if (timeouts[i] > cfg->start_at)
@@ -186,13 +186,13 @@ static int check_randomized(const struct rand_cfg *cfg)
 
 	while (now < cfg->end_at) {
 		int n_fired_this_time = 0;
-		timeout_t first_at = timeouts_timeout(tos) + now;
+		timeout_t first_at = timeouts_timeout(tos) + now;//获取下一个超时的定时器时间
 
 		timeout_t oldtime = now;
-		timeout_t step = random_to(1, cfg->max_step);
+		timeout_t step = random_to(1, cfg->max_step);//随机产生一个递进时间
 		int another;
 		now += step;
-		if (rel)
+		if (rel)//根据时间更新调整定时器队列
 			timeouts_step(tos, step);
 		else
 			timeouts_update(tos, now);
@@ -200,14 +200,14 @@ static int check_randomized(const struct rand_cfg *cfg)
 		for (i = 0; i < cfg->try_removing; ++i) {
 			int idx = random() % cfg->n_timeouts;
 			if (! fired[idx]) {
-				timeout_del(&t[idx]);
+				timeout_del(&t[idx]);//测试随机移除定时器
 				++deleted[idx];
 			}
 		}
 
 		another = (timeouts_timeout(tos) == 0);
 
-		while (NULL != (to = timeouts_get(tos))) {
+		while (NULL != (to = timeouts_get(tos))) {//取出所有已超时定时器
 			if (! another)
 				FAIL(); /* Thought we saw the last one! */
 			i = to - &t[0];
@@ -250,7 +250,7 @@ static int check_randomized(const struct rand_cfg *cfg)
 
 	/* Now nothing more should fire between now and the end of time. */
 	if (cfg->finalize) {
-		timeouts_update(tos, THE_END_OF_TIME);
+		timeouts_update(tos, THE_END_OF_TIME);//让所有定时器超时
 		if (cfg->finalize > 1) {
 			if (timeouts_get(tos))
 				FAIL();
