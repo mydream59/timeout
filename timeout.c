@@ -320,12 +320,16 @@ static inline reltime_t timeout_rem(struct timeouts *T, struct timeout *to) {
 
 //计算超时时间间隔的最大bit数，确定wheel位置
 //传入timeout不能为0
+//timeout:传入timeout为相对于curtime的超时时间
+//使用相对时间计算wheel可以保证快要超时的定时器都在低wheel中
 static inline int timeout_wheel(timeout_t timeout) {
 	/* must be called with timeout != 0, so fls input is nonzero */
 	return (fls(MIN(timeout, TIMEOUT_MAX)) - 1) / WHEEL_BIT;
 } /* timeout_wheel() */
 
 //除了times[0]外，后边的times[wheel]最大的times[wheel][max]实际没有用到
+//expires:使用超时的绝对时间
+//使用绝对时间计算slot,可以保证同一个wheel中的定时器位置固定，不需要每次update都调换位置
 static inline int timeout_slot(int wheel, timeout_t expires) {
 	return WHEEL_MASK & ((expires >> (wheel * WHEEL_BIT)) - !!wheel);
 } /* timeout_slot() */
@@ -462,6 +466,7 @@ TIMEOUT_PUBLIC void timeouts_update(struct timeouts *T, abstime_t curtime) {
 			break; /* break if we didn't wrap around end of wheel */
 
 		/* if we're continuing, the next wheel must tick at least once */
+		//如果偏移时间小于当前轮的最大时间，则取当前wheel的最大时间
 		elapsed = MAX(elapsed, (WHEEL_LEN << (wheel * WHEEL_BIT)));
 	}
 
